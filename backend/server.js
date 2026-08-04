@@ -4,12 +4,18 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
-// import userRoutes from "./routes/userRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 
 dotenv.config();
 
-connectDB();
+console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
+console.log("JWT_SECRET length:", process.env.JWT_SECRET?.length);
+
+connectDB().catch(err => {
+  console.error("DB connection failed:", err);
+  process.exit(1);
+});
 
 
 const app = express();
@@ -27,7 +33,7 @@ const io = new Server(server, {
     origin: allowOrigin,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorizaton'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
 
   }
 })
@@ -35,7 +41,7 @@ const io = new Server(server, {
 app.use(cors({
     origin: (origin, callback) => {
         if(!origin) return callback(null, true)
-        if(allowedOrigin.includes(origin)) return callback(null, true)
+        if(allowOrigin.includes(origin)) return callback(null, true)
         else{ 
         if(process.env.NODE_ENV === 'production'){
       callback(null, true)
@@ -60,7 +66,7 @@ app.get("/", (req, res) => {
   res.send("API is running");
 });
 
-// app.use("/api/users", userRoutes);
+app.use("/api/users", userRoutes);
 // app.use("/api/sessions", sessionRoutes);
 
 
