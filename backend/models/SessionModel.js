@@ -76,15 +76,19 @@ const sessionSchema= new mongoose.Schema({
     default: Date.now,
   },
 
-  avgTechnical:{
-    type: Number,
-    default: 0
+  metrics: {
+    avgTechnical:{
+      type: Number,
+      default: 0
+    },
+
+    avgConfidence: {
+      type:Number,
+      default: 0
+    },
+
   },
 
-  avgConfidence: {
-    type:Number,
-    default: 0
-  },
   questions:[questionSchema],
   startTime:{type:Date, default:Date.now},
   endTime: {type:Date},
