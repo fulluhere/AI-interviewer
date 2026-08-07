@@ -54,7 +54,8 @@ const createSession = asyncHandler(async (req, res) => {
         body: JSON.stringify({
           role,
           level,
-          count
+          count,
+          interview_type:interviewType
         })
       });
 
