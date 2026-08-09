@@ -26,7 +26,7 @@ const createSession = asyncHandler(async (req, res) => {
     throw new Error("Please fill all the fields");
   }
   let session = await Session.create({
-    user.userId,
+    user: user.userId,
     role,
     level,
     interviewType,
