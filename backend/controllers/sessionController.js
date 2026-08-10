@@ -26,7 +26,7 @@ const createSession = asyncHandler(async (req, res) => {
     throw new Error("Please fill all the fields");
   }
   let session = await Session.create({
-    user: user.userId,
+    user: userId,
     role,
     level,
     interviewType,
@@ -55,13 +55,13 @@ const createSession = asyncHandler(async (req, res) => {
           role,
           level,
           count,
-          interview_type:interviewType
+          interview_type: interviewType
         })
       });
 
       if (!aiResponse.ok) {
         const errorBody = await aiResponse.text();
-        throw new Error("AI service error: ${aiResponse.status}-${errorBody}");
+        throw new Error(`AI service error: ${aiResponse.status} - ${errorBody}`);
       }
       const aiData = await aiResponse.json();
       const codingCount = interviewType === 'coding-mix' ? Math.floor(count * 0.2) : 0;
@@ -95,7 +95,7 @@ const getSessions = asyncHandler(async (req, res) => {
 })
 
 const getSessionById = asyncHandler(async (req, res) => {
-  const usekjrId = req.user._id;
+  const userId = req.user._id;
   const sessionId = req.params.id;
   const session = await Session.findOne({ user: userId, _id: sessionId });
 
@@ -122,35 +122,36 @@ const deleteSession = asyncHandler(async (req, res) => {
 
 
 const calculateOverallScore = async (sessionId) => {
-    const results= await Session.aggregate([
-      {
-          $match: {
-            _id:new mongoose.SchemaTypeOptions.ObjectId(sessionId)
-          }
-      },
-      {
-        $unwind: "$questions"
-      },
-      {
-        $group:{
-          _id:'$_id',
-          avgTechnical:{$avg:{$cond:[{$eq:['$questions.isEvaluated', true]}, '$questions.technicalScore', 0]}},
-          avgConfidence:{$avg:{$cond:[{$eq:['$questions.isEvaluated', true]}, '$questions.confidenceScore', 0]}},
-        }
-      },
+  const results = await Session.aggregate([
+    {
+      $match: {
+        _id: new mongoose.Types.ObjectId(sessionId)
+      }
+    },
+    {
+      $unwind: "$questions"
+    },
+    {
+      $group: {
+        _id: '$_id',
+        avgTechnical: { $avg: { $cond: [{ $eq: ['$questions.isEvaluated', true] }, '$questions.technicalScore', 0] } },
+        avgConfidence: { $avg: { $cond: [{ $eq: ['$questions.isEvaluated', true] }, '$questions.confidenceScore', 0] } },
+      }
+    },
 
-      {
-        $project:{
-          _id:0,
-          overallScore:{$round:[{$avg:['$avgTechnical', '$avgConfidence']}, 0]},
-          avgTechnical: {$round: ["$avgTechnical", 0]},
-          avgConfidence:{$round: ["$avgConfidence", 0]},
-        }
-      },
-    ]);
+    {
+      $project: {
+        _id: 0,
+        overallScore: { $round: [{ $avg: ['$avgTechnical', '$avgConfidence'] }, 0] },
+        avgTechnical: { $round: ["$avgTechnical", 0] },
+        avgConfidence: { $round: ["$avgConfidence", 0] },
+      }
+    },
+  ]);
 
-    return results[0] || {overallScore:0, avgTechnical:0, avgConfidence:0};
+  return results[0] || { overallScore: 0, avgTechnical: 0, avgConfidence: 0 };
 }
+
 const evaluateAnswerAsync = async (io, userId, sessionId, questionIdx, audioFilePath = null, codeSubmission = null) => {
   let transcription = "";
   const questionIndex = typeof questionIdx === "string" ? parseInt(questionIdx, 10) : questionIdx;
@@ -162,52 +163,47 @@ const evaluateAnswerAsync = async (io, userId, sessionId, questionIdx, audioFile
     return;
   }
 
-
   const question = session.questions[questionIndex];
   if (!question) {
     pushSocketUpdate(io, userId, sessionId, "failed", `Question not found at index ${questionIndex}`);
     return;
   }
-}
 
-let transcription = "";
-if (audioFilePath) {
-  try {
-    pushSocketUpdate(io, userId, sessionId, "AI_TRANSCRIBING", `Transcribing question ${questionIndex + 1}...`);
-    const formData = new FormData();
-    formData.append("file", fs.createReadStream(audioFilePath));
-    const transResponse = await fetch(`${AI_SERVICE_URL}/transcribe`, {
-      method: "POST",
-      body: formData,
-      headers: formData.getHeaders()
-    });
+  if (audioFilePath) {
+    try {
+      pushSocketUpdate(io, userId, sessionId, "AI_TRANSCRIBING", `Transcribing question ${questionIndex + 1}...`);
+      const formData = new FormData();
+      formData.append("file", fs.createReadStream(audioFilePath));
+      const transResponse = await fetch(`${AI_SERVICE_URL}/transcribe`, {
+        method: "POST",
+        body: formData,
+        headers: formData.getHeaders()
+      });
 
-    if (!transResponse.ok) {
-      const errorBody = await transResponse.text();
-      throw new Error(`AI service error: ${transResponse.status} - ${errorBody}`);
-    }
+      if (!transResponse.ok) {
+        const errorBody = await transResponse.text();
+        throw new Error(`AI service error: ${transResponse.status} - ${errorBody}`);
+      }
 
-    const transData = await transResponse.json();
-    transcription = transData.transcription || "";
+      const transData = await transResponse.json();
+      transcription = transData.transcription || "";
 
+    } catch (error) {
+      console.error(`Transcription failed: ${error.message}`);
+      pushSocketUpdate(io, userId, sessionId, "failed", error.message);
 
-
-  } catch (error) {
-    console.error(`Transcription failed: ${error.message}`);
-    pushSocketUpdate(io, userId, sessionId, "failed", error.message);
-
-  } finally {
-    if (audioFilePath && fs.existsSync(audioFilePath)) {
-      fs.unlinkSync(audioFilePath);
+    } finally {
+      if (audioFilePath && fs.existsSync(audioFilePath)) {
+        fs.unlinkSync(audioFilePath);
+      }
     }
   }
-
 
   try {
     pushSocketUpdate(io, userId, sessionId, "AI_EVALUATING", `Evaluating question ${questionIndex + 1}...`);
 
     const evalResponse = await fetch(`${AI_SERVICE_URL}/evaluate`, {
-      methos: "POST",
+      method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
@@ -217,19 +213,18 @@ if (audioFilePath) {
         role: session.role,
         level: session.level,
         user_answer: transcription,
-        user_code: code || ""
+        user_code: codeSubmission || ""
       })
     });
     if (!evalResponse.ok) {
       const errorBody = await evalResponse.text();
-      throw new Error(`AI service error:${evalResponse.status}-${errorBody}`);
+      throw new Error(`AI service error: ${evalResponse.status} - ${errorBody}`);
     }
 
     const evalData = await evalResponse.json();
 
-
     question.userAnswerText = transcription;
-    question.userSubmittedCode = code || "";
+    question.userSubmittedCode = codeSubmission || "";
     question.idealAnswer = evalData.answer;
     question.aiFeedback = evalData.aiFeedback;
     question.technicalScore = evalData.technicalScore;
@@ -241,15 +236,11 @@ if (audioFilePath) {
       const scoreSummary = await calculateOverallScore(sessionId);
       session.overallScore = scoreSummary.overallScore || 0;
       session.metrics = {
-            avgTechnical:scoreSummary.avgTechnical,
-    avgConfidence:scoreSummary.avgConfidence
+        avgTechnical: scoreSummary.avgTechnical,
+        avgConfidence: scoreSummary.avgConfidence
       };
-      if (allQuestionsEvaluated) {
-        session.status = "completed";
-        session.endTime = session.endTime || new Data();
-      }
-
-
+      session.status = "completed";
+      session.endTime = session.endTime || new Date();
 
       await session.save();
       pushSocketUpdate(io, userId, sessionId, "session_completed", `Scores finalised`, session);
@@ -267,7 +258,6 @@ if (audioFilePath) {
 }
 
 
-
 const submitAnswer = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const sessionId = req.params.id;
@@ -277,14 +267,13 @@ const submitAnswer = asyncHandler(async (req, res) => {
   if (!session || session.user.toString() !== userId.toString()) {
     res.status(404);
     throw new Error("Session not found or user unauthorised");
-
   }
   const questionIdx = parseInt(questionIndex, 10);
   const question = session.questions[questionIdx];
 
   if (!question) {
     res.status(404);
-    throw new Error(`Question not found at index $(questionIndex)`);
+    throw new Error(`Question not found at index ${questionIndex}`);
   }
 
   let audioFilePath = null;
@@ -292,50 +281,48 @@ const submitAnswer = asyncHandler(async (req, res) => {
     audioFilePath = path.join(process.cwd(), req.file.path);
   }
 
-
   const codeSubmission = code || null;
-
 
   question.isSubmitted = true;
 
   await session.save();
-  res.status(200).json({ message: "Amswer submitted .please wait for the result", status: "Recieved" });
+  res.status(200).json({ message: "Answer submitted. Please wait for the result", status: "Received" });
 
-  evaluateAnswerAsync(io, userId, sessionId, questionIdx, codeSubmission, audioFile);
-
+  const io = req.app.get("io");
+  evaluateAnswerAsync(io, userId, sessionId, questionIdx, audioFilePath, codeSubmission);
 
 })
 
-const endSession=asyncHandler(async(req, res)=>{
-  const userId=req.user._id;
-  const sessionId=req.params.id;
-  const session=await Session.findById(sessionId);
-  if(!session || session.user.toString()!=userId.toString()){
+const endSession = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const sessionId = req.params.id;
+  const session = await Session.findById(sessionId);
+  if (!session || session.user.toString() != userId.toString()) {
     res.status(404);
     throw new Error("Session not found or user unauthorised");
   }
 
-  const isProcessing = session.questions.some(q=>q.isSubmitted && !q.isEvaluated);
-  if(isProcessing){
+  const isProcessing = session.questions.some(q => q.isSubmitted && !q.isEvaluated);
+  if (isProcessing) {
     res.status(400);
     throw new Error("Ai is still processing, please wait before ending the session");
   }
-  if(session.status==="completed"){
+  if (session.status === "completed") {
     res.status(400);
     throw new Error("Session already ended");
   }
 
-  const scoreSummary=await calculateOverallScore(sessionId);
-  session.overallScore=scoreSummary.overallScore||0;
-  session.metrics={
-    avgTechnical:scoreSummary.avgTechnical,
-    avgConfidence:scoreSummary.avgConfidence
+  const scoreSummary = await calculateOverallScore(sessionId);
+  session.overallScore = scoreSummary.overallScore || 0;
+  session.metrics = {
+    avgTechnical: scoreSummary.avgTechnical,
+    avgConfidence: scoreSummary.avgConfidence
   }
-  session.status="completed";
+  session.status = "completed";
   await session.save();
-  const io=req.app.get("io");
+  const io = req.app.get("io");
   pushSocketUpdate(io, userId, sessionId, "session_completed", "Interview ended early", session);
-  res.status(200).json({message:"Session ended successfully", session});
+  res.status(200).json({ message: "Session ended successfully", session });
 })
 
 export { createSession, submitAnswer, endSession, getSessions, getSessionById, deleteSession, calculateOverallScore };
