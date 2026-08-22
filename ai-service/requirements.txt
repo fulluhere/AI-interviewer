@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+requests
+python-dotenv
+pydantic
+ollama
+openai-whisper
+pydub
+ffmpeg-python
+python-multipart
