@@ -1,33 +1,63 @@
 import multer from "multer";
+import path from "path";
+
 
 const storage = multer.diskStorage({
-  destination(req, file, cb){
-    cb(null, "uploads/");
-  },
-  filename(req, file, cb){
-    const ext=path.extname(file.originalname);
-    const basename=path.basename(file.originalname, ext);
-    const sessionId=req.params.id || 'unknown';
-    cb(null, `${sessionId}-${Date.now()}${ext}`);
-
-  },
-});
+    destination(req, file, cb) {
+        cb(null, "uploads/");
+    },
+    filename(req, file, cb) {
+        const ext=path.extname(file.originalname);
+        
+        const sessionId=req.params.id || 'unknown';
+        cb(null, `${sessionId}-${Date.now()}${ext}`);
+    },
+}); 
 
 const fileFilter = (req, file, cb) => {
-  if(file.mimetype.startsWith("audio/") || file.mimetype === "application/octet-stream"){
-      cb(null, true);
-  }else{
-    cb(null, false);
-  }
+    if (file.mimetype.startsWith("audio/") || file.mimetype === "application/octet-stream") {
+        cb(null, true);
+    } else {
+        cb(new Error("Not an audio file"), false);
+    }
 };
 
 const upload = multer({
-  storage: storage,
-  fileFilter,
-  limits: { fileSize: 1024*1024*10},
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 1024 * 1024 * 10 },
 });
 
+const uploadSingleAudio = upload.single("audioFile");
+export { uploadSingleAudio };import multer from "multer";
+import path from "path";
 
-const uploadSingleAudio = upload.single("audio");
 
+const storage = multer.diskStorage({
+    destination(req, file, cb) {
+        cb(null, "uploads/");
+    },
+    filename(req, file, cb) {
+        const ext=path.extname(file.originalname);
+        
+        const sessionId=req.params.id || 'unknown';
+        cb(null, `${sessionId}-${Date.now()}${ext}`);
+    },
+}); 
+
+const fileFilter = (req, file, cb) => {
+    if (file.mimetype.startsWith("audio/") || file.mimetype === "application/octet-stream") {
+        cb(null, true);
+    } else {
+        cb(new Error("Not an audio file"), false);
+    }
+};
+
+const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 1024 * 1024 * 10 },
+});
+
+const uploadSingleAudio = upload.single("audioFile");
 export { uploadSingleAudio };
