@@ -3,3 +3,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+ai-service/venv/
+
+ai-service/rag_test.pdf

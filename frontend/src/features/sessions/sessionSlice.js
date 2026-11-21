@@ -109,6 +109,7 @@ export const sessionSlice = createSlice({
         },
         socketUpdateSession: (state, action) => {
             const { sessionId, status, message, session } = action.payload;
+
             state.message = message;
 
             if (status === 'QUESTIONS_READY' || status === 'GENERATION_FAILED') {
@@ -116,21 +117,32 @@ export const sessionSlice = createSlice({
             }
 
             if (session && state.activeSession && state.activeSession._id === sessionId) {
-                state.activeSession.questions = state.activeSession.questions.map((currentQ, index) => {
-                    const incomingQ = session.questions[index];
-                    if (!incomingQ) return currentQ;
+
+                const currentQuestions = state.activeSession.questions || [];
+
+                state.activeSession.questions = session.questions.map((incomingQ, index) => {
+                    const currentQ = currentQuestions[index];
+
+                    if (!currentQ) return incomingQ;
+
                     if (incomingQ.isEvaluated) return incomingQ;
-                    if (currentQ.isSubmitted && !incomingQ.isSubmitted) return currentQ;
+
+                    if (currentQ.isSubmitted && !incomingQ.isSubmitted) {
+                        return {
+                            ...incomingQ,
+                            isSubmitted: true
+                        };
+                    }
+
                     return incomingQ;
                 });
+
                 state.activeSession.overallScore = session.overallScore;
                 state.activeSession.status = session.status;
                 state.activeSession.metrics = session.metrics;
+                state.activeSession.endTime = session.endTime;
             }
         },
-        setActiveSession: (state, action) => {
-            state.activeSession = action.payload;
-        }
     },
     extraReducers: (builder) => {
         builder

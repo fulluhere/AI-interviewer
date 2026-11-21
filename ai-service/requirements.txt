@@ -8,3 +8,9 @@ openai-whisper
 pydub
 ffmpeg-python
 python-multipart
+# RAG and LangChain
+langchain
+langchain-text-splitters
+langchain-chroma
+langchain-ollama
+pypdf

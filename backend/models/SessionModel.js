@@ -38,9 +38,26 @@ const questionSchema = new mongoose.Schema({
         type:Number,
         default:0
     },
-    aiFeedback:{
-        type:String,
-        default:"Not yet submitted or evaluated"
+    // Adaptive AI metadata
+    aiFeedback: {
+        type: String,
+        default: "Not yet submitted or evaluated"
+    },
+    isFollowUp: {
+        type: Boolean,
+        default: false
+    },
+    parentQuestionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null
+    },
+    followUpDepth: {
+        type: Number,
+        default: 0
+    },
+    followUpCount: {
+        type: Number,
+        default: 0
     }
 });
 

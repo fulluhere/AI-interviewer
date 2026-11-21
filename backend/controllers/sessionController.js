@@ -230,6 +230,89 @@ const evaluateAnswerAsync = async (io, userId, sessionId, questionIndex, audioFi
         question.idealAnswer = evalData.idealAnswer;
         question.isEvaluated = true;
 
+
+        // --- Phase 4: Generate Adaptive Follow-up ---
+        const existingFollowUp = session.questions.some(
+            (q) =>
+                q.parentQuestionId &&
+                q.parentQuestionId.toString() === question._id.toString()
+        );
+
+        if (
+            !existingFollowUp &&
+            (question.followUpDepth || 0) < 2 &&
+            session.status !== 'completed'
+        ) {
+            try {
+                pushSocketUpdate(
+                    io,
+                    userId,
+                    sessionId,
+                    'AI_GENERATING_FOLLOW_UP',
+                    `Generating an adaptive follow-up for Q${questionIdx + 1}...`
+                );
+
+                const followUpResponse = await fetch(
+                    `${AI_SERVICE_URL}/generate-followup`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            question: question.questionText,
+                            question_type: question.questionType,
+                            role: session.role,
+                            level: session.level,
+                            user_answer: transcription || '',
+                            user_code: code || '',
+                            technical_score: Number(evalData.technicalScore) || 0,
+                            confidence_score: Number(evalData.confidenceScore) || 0,
+                            ai_feedback: evalData.aiFeedback || '',
+                            ideal_answer: evalData.idealAnswer || '',
+                            follow_up_depth: question.followUpDepth || 0
+                        })
+                    }
+                );
+
+                if (!followUpResponse.ok) {
+                    throw new Error('Follow-up generation service failed');
+                }
+
+                const followUpData = await followUpResponse.json();
+
+                if (
+                    followUpData.should_follow_up &&
+                    followUpData.follow_up_question?.trim()
+                ) {
+                    question.followUpCount = (question.followUpCount || 0) + 1;
+
+                    session.questions.push({
+                        questionText: followUpData.follow_up_question.trim(),
+                        questionType: question.questionType,
+                        idealAnswer: 'pending',
+                        isFollowUp: true,
+                        parentQuestionId: question._id,
+                        followUpDepth: (question.followUpDepth || 0) + 1,
+                        followUpCount: 0
+                    });
+
+                    console.log(
+                        `Follow-up generated for Q${questionIdx + 1}`
+                    );
+                } else {
+                    console.log(
+                        'No follow-up required:',
+                        followUpData.reason
+                    );
+                }
+            } catch (followUpError) {
+                // Follow-up failure should not break normal evaluation
+                console.error(
+                    'Follow-up Generation Error:',
+                    followUpError.message
+                );
+            }
+        }
+
         // Check if all questions in the entire session are now evaluated
         const allQuestionsEvaluated = session.questions.every(q => q.isEvaluated);
 
