@@ -81,6 +81,18 @@ const sessionSchema= new mongoose.Schema({
         enum:["oral-only","coding-mix"],
         required:true
     },
+    // Interview mode: General or RAG-based
+    interviewMode: {
+        type: String,
+        enum: ["general", "knowledge-based"],
+        default: "general"
+    },
+
+    // Selected knowledge base for RAG interviews
+    knowledgeBaseId: {
+        type: String,
+        default: null
+    },
     status:{
         type:String,
         enum:["pending","in-progress","completed","failed"],

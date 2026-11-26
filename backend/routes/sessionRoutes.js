@@ -1,14 +1,16 @@
 import express from "express";
-import { 
-    createSession, 
-    deleteSession, 
-    endSession, 
-    getSessionById, 
-    getSessions, 
-    submitAnswer
+import {
+    createSession,
+    deleteSession,
+    endSession,
+    getSessionById,
+    getSessions,
+    submitAnswer,
+    uploadKnowledgeBase
 } from "../controllers/sessionController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { uploadSingleAudio } from "../middleware/uploadMiddleware.js";
+import { uploadSinglePdf } from "../middleware/pdfUploadMiddleware.js";
 
 const router = express.Router();
 
@@ -28,5 +30,7 @@ router.route("/:id")
 // 3. Action Routes
 router.route("/:id/submit-answer").post(uploadSingleAudio, submitAnswer);
 router.route("/:id/end").post(endSession);
+// 4. Knowledge Base PDF Upload
+router.post("/knowledge-base/upload", uploadSinglePdf, uploadKnowledgeBase);
 
 export default router;

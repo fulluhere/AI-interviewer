@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react"
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { createSession, getSessions,reset,deleteSession } from '../features/sessions/sessionSlice'
+import {
+  createSession,
+  getSessions,
+  reset,
+  deleteSession,
+  uploadKnowledgeBase
+} from '../features/sessions/sessionSlice'
 import { toast } from 'react-toastify'
 import SessionCard from "../components/SessionCard"
 
@@ -33,15 +39,27 @@ const Dashboard = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
-  const { sessions, isLoading, isGenerating, isError, message } = useSelector((state) => state.sessions);
+  const {
+  sessions,
+  isLoading,
+  isGenerating,
+  isError,
+  message,
+  isUploadingKnowledgeBase,
+  uploadedKnowledgeBase
+} = useSelector((state) => state.sessions);
   const isProcessing = isGenerating;
 
-  const [formData, setFormData] = useState({
-    role: user.preferredRole || ROLES[0],
-    level: LEVELS[0],
-    interviewType: TYPES[1].value,
-    count: COUNTS[0],
-  });
+const [selectedPdf, setSelectedPdf] = useState(null);
+
+const [formData, setFormData] = useState({
+  role: user.preferredRole || ROLES[0],
+  level: LEVELS[0],
+  interviewType: TYPES[1].value,
+  count: COUNTS[0],
+  interviewMode: 'general',
+  knowledgeBaseId: null,
+});
 
   useEffect(() => {
     dispatch(getSessions());
@@ -58,8 +76,40 @@ const Dashboard = () => {
     setFormData((prevState) => ({ ...prevState, [e.target.name]: e.target.value }));
   }
 
+  const handlePdfUpload = async () => {
+  if (!selectedPdf) {
+    toast.error('Please select a PDF file first.');
+    return;
+  }
+
+  try {
+    const result = await dispatch(
+      uploadKnowledgeBase({ file: selectedPdf })
+    ).unwrap();
+
+    setFormData((prevState) => ({
+      ...prevState,
+      knowledgeBaseId: result.knowledge_base_id
+    }));
+
+    toast.success('PDF uploaded and processed successfully!');
+  } catch (error) {
+    // Redux error handling already displays the error through useEffect.
+    console.error('PDF upload failed:', error);
+  }
+};
+
   const onSubmit = (e) => {
     e.preventDefault();
+
+    if (
+      formData.interviewMode === 'knowledge-based' &&
+      !formData.knowledgeBaseId
+    ) {
+      toast.error('Please upload and process a PDF before starting.');
+      return;
+    }
+
     dispatch(createSession(formData));
   }
 
@@ -107,6 +157,66 @@ const Dashboard = () => {
           </h2>
         </div>
         <form onSubmit={onSubmit} className="p-6 sm:p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 items-end">
+        {/* Interview Mode */}
+        <div className="space-y-2 md:col-span-2 lg:col-span-5">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+            Interview Mode
+          </label>
+
+          <select
+            name="interviewMode"
+            value={formData.interviewMode}
+            onChange={(e) => {
+              onChange(e);
+              setSelectedPdf(null);
+              setFormData((prev) => ({
+                ...prev,
+                knowledgeBaseId: null
+              }));
+            }}
+            className="w-full bg-slate-50 border-none rounded-xl sm:rounded-2xl p-3 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="general">General Interview</option>
+            <option value="knowledge-based">Knowledge-Based Interview (PDF)</option>
+          </select>
+        </div>
+
+        {/* PDF Upload - Only for Knowledge-Based Mode */}
+        {formData.interviewMode === 'knowledge-based' && (
+          <div className="space-y-3 md:col-span-2 lg:col-span-5 bg-teal-50 border border-teal-100 rounded-2xl p-4">
+            <label className="block text-sm font-bold text-slate-700">
+              Upload your study material (PDF)
+            </label>
+
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={(e) => {
+                setSelectedPdf(e.target.files?.[0] || null);
+                setFormData((prev) => ({
+                  ...prev,
+                  knowledgeBaseId: null
+                }));
+              }}
+              className="block w-full text-sm text-slate-600"
+            />
+
+            <button
+              type="button"
+              onClick={handlePdfUpload}
+              disabled={!selectedPdf || isUploadingKnowledgeBase}
+              className="px-5 py-2.5 rounded-xl font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+            >
+              {isUploadingKnowledgeBase ? 'Processing PDF...' : 'Upload PDF'}
+            </button>
+
+            {uploadedKnowledgeBase && formData.knowledgeBaseId && (
+              <p className="text-sm font-semibold text-green-700">
+                PDF processed successfully. Knowledge base is ready!
+              </p>
+            )}
+          </div>
+        )}
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Role</label>
             <select name="role" value={formData.role} onChange={onChange} className="w-full bg-slate-50 border-none rounded-xl sm:rounded-2xl p-3 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-teal-500">

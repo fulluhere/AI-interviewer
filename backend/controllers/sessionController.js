@@ -25,12 +25,35 @@ const pushSocketUpdate = (io, userId, sessionId, status, message, session = null
 // @route   POST /api/sessions/
 // @access  Private
 const createSession = asyncHandler(async (req, res) => {
-    const { role, level, interviewType, count } = req.body;
+    const {
+        role,
+        level,
+        interviewType,
+        count,
+        interviewMode = 'general',
+        knowledgeBaseId = null
+    } = req.body;
+
     const userId = req.user._id;
 
     if (!role || !level || !interviewType || !count) {
         res.status(400);
         throw new Error('Please specify role, level, interview type, and question count.');
+    }
+
+    if (!['general', 'knowledge-based'].includes(interviewMode)) {
+        res.status(400);
+        throw new Error('Invalid interview mode.');
+    }
+
+    if (interviewMode === 'knowledge-based' && !knowledgeBaseId) {
+        res.status(400);
+        throw new Error('Please select a knowledge base for a knowledge-based interview.');
+    }
+
+    if (interviewMode === 'general' && knowledgeBaseId) {
+        res.status(400);
+        throw new Error('General interviews cannot specify a knowledge base.');
     }
 
     // 1. Create the session placeholder in MongoDB
@@ -39,6 +62,8 @@ const createSession = asyncHandler(async (req, res) => {
         role,
         level,
         interviewType,
+        interviewMode,
+        knowledgeBaseId,
         status: 'pending',
     });
 
@@ -63,12 +88,18 @@ const createSession = asyncHandler(async (req, res) => {
             // backend/controllers/sessionController.js inside createSession
             const aiResponse = await fetch(`${AI_SERVICE_URL}/generate-questions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+    'Content-Type': 'application/json',
+    'x-ai-service-key': process.env.AI_SERVICE_API_KEY
+},
                 body: JSON.stringify({
                     role,
                     level,
                     count,
-                    interview_type: interviewType // ADD THIS LINE
+                    interview_type: interviewType,
+                    interview_mode: interviewMode,
+                    knowledge_base_id: knowledgeBaseId,
+                    user_id: String(userId)
                 }),
             });
 
@@ -202,16 +233,24 @@ const evaluateAnswerAsync = async (io, userId, sessionId, questionIndex, audioFi
     try {
         pushSocketUpdate(io, userId, sessionId, 'AI_EVALUATING', `AI is analyzing Q${questionIdx + 1}...`);
 
-        const evalResponse = await fetch(`${AI_SERVICE_URL}/evaluate`, {
+                const evalResponse = await fetch(`${AI_SERVICE_URL}/evaluate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-ai-service-key': process.env.AI_SERVICE_API_KEY
+            },
             body: JSON.stringify({
                 question: question.questionText,
-                question_type: question.questionType, // Tells AI if it should expect code
+                question_type: question.questionType,
                 role: session.role,
                 level: session.level,
-                user_answer: transcription, // Dedicated transcription field
-                user_code: code || "",      // Dedicated code field
+                user_answer: transcription,
+                user_code: code || "",
+
+                // RAG interview context
+                interview_mode: session.interviewMode || 'general',
+                knowledge_base_id: session.knowledgeBaseId || null,
+                user_id: String(session.user)
             }),
         });
 
@@ -256,7 +295,10 @@ const evaluateAnswerAsync = async (io, userId, sessionId, questionIndex, audioFi
                     `${AI_SERVICE_URL}/generate-followup`,
                     {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-ai-service-key': process.env.AI_SERVICE_API_KEY
+                        },
                         body: JSON.stringify({
                             question: question.questionText,
                             question_type: question.questionType,
@@ -268,7 +310,12 @@ const evaluateAnswerAsync = async (io, userId, sessionId, questionIndex, audioFi
                             confidence_score: Number(evalData.confidenceScore) || 0,
                             ai_feedback: evalData.aiFeedback || '',
                             ideal_answer: evalData.idealAnswer || '',
-                            follow_up_depth: question.followUpDepth || 0
+                            follow_up_depth: question.followUpDepth || 0,
+
+                            // RAG interview context
+                            interview_mode: session.interviewMode || 'general',
+                            knowledge_base_id: session.knowledgeBaseId || null,
+                            user_id: String(session.user)
                         })
                     }
                 );
@@ -477,7 +524,70 @@ export {
     submitAnswer,
     endSession,
     calculateOverallScore,
-    deleteSession
+    deleteSession,
+    uploadKnowledgeBase
 };
+
+// @desc    Upload PDF and create a knowledge base
+// @route   POST /api/sessions/knowledge-base/upload
+// @access  Private
+const uploadKnowledgeBase = asyncHandler(async (req, res) => {
+    // 1. Check whether a PDF was uploaded
+    if (!req.file) {
+        res.status(400);
+        throw new Error("Please upload a PDF file.");
+    }
+
+    // 2. Get authenticated user ID
+    const userId = req.user._id.toString();
+
+    // 3. Verify AI service configuration
+    const apiKey = process.env.AI_SERVICE_API_KEY;
+
+    if (!apiKey) {
+        res.status(500);
+        throw new Error("AI service API key is not configured.");
+    }
+
+    // 4. Prepare multipart form data for FastAPI
+    const formData = new FormData();
+
+    formData.append("file", req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype
+    });
+
+    formData.append("user_id", userId);
+
+    // Optional: reuse an existing knowledge base ID
+    if (req.body.knowledge_base_id) {
+        formData.append(
+            "knowledge_base_id",
+            req.body.knowledge_base_id
+        );
+    }
+
+    // 5. Forward PDF to FastAPI
+    const response = await fetch(`${AI_SERVICE_URL}/ingest-pdf`, {
+        method: "POST",
+        headers: {
+            ...formData.getHeaders(),
+            "x-ai-service-key": apiKey
+        },
+        body: formData
+    });
+
+    // 6. Read FastAPI response
+    const result = await response.json();
+
+    if (!response.ok) {
+        return res.status(response.status).json({
+            message: result.detail || "PDF processing failed."
+        });
+    }
+
+    // 7. Return knowledge base details to frontend
+    res.status(201).json(result);
+});
 
 
