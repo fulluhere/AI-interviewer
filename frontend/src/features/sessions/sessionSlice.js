@@ -30,6 +30,8 @@ const initialState = {
     isGenerating: false,
     isError: false,
     isLoading: false,
+    isUploadingKnowledgeBase: false,
+    uploadedKnowledgeBase: null,
     message: ''
 }
 
@@ -52,6 +54,39 @@ export const createSession = createAsyncThunk('sessions/create', async (sessionD
         return thunkAPI.rejectWithValue(message);
     }
 })
+
+
+export const uploadKnowledgeBase = createAsyncThunk(
+    'sessions/uploadKnowledgeBase',
+    async ({ file, knowledgeBaseId = null }, thunkAPI) => {
+        try {
+            const formData = new FormData();
+
+            formData.append('file', file);
+
+            if (knowledgeBaseId) {
+                formData.append('knowledge_base_id', knowledgeBaseId);
+            }
+
+            const response = await api.post(
+                '/knowledge-base/upload',
+                formData
+            );
+
+            return response.data;
+        } catch (error) {
+            const message =
+                (error.response &&
+                    error.response.data &&
+                    error.response.data.message) ||
+                error.message ||
+                error.toString();
+
+            return thunkAPI.rejectWithValue(message);
+        }
+    }
+)
+
 
 export const getSessionById = createAsyncThunk('sessions/getOne', async (sessionId, thunkAPI) => {
     try {
@@ -146,7 +181,20 @@ export const sessionSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-            
+            .addCase(uploadKnowledgeBase.pending, (state) => {
+                state.isUploadingKnowledgeBase = true;
+                state.isError = false;
+                state.message = '';
+            })
+            .addCase(uploadKnowledgeBase.fulfilled, (state, action) => {
+                state.isUploadingKnowledgeBase = false;
+                state.uploadedKnowledgeBase = action.payload;
+            })
+            .addCase(uploadKnowledgeBase.rejected, (state, action) => {
+                state.isUploadingKnowledgeBase = false;
+                state.isError = true;
+                state.message = action.payload || 'PDF upload failed.';
+            })
             .addCase(getSessions.pending, (state) => { state.isLoading = true; })
             .addCase(getSessions.fulfilled, (state, action) => {
                 state.isLoading = false;
