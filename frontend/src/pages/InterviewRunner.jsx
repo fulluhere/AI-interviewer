@@ -63,7 +63,17 @@ function InterviewRunner() {
 
   const [drafts, setDrafts] = useState(() => {
     const saved = localStorage.getItem(`drafts_${sessionId}`);
-    return saved ? JSON.parse(saved) : {};
+
+    if (!saved) return {};
+
+    const parsed = JSON.parse(saved);
+
+    return Object.fromEntries(
+      Object.entries(parsed).map(([index, draft]) => [
+        index,
+        { ...draft, audioBlob: null }
+      ])
+    );
   });
 
   const [isRecording, setIsRecording] = useState(false);
@@ -73,6 +83,7 @@ function InterviewRunner() {
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const stopRecordingResolveRef = useRef(null);
 
   useEffect(() => {
     if (activeSession?.role) {
@@ -85,7 +96,17 @@ function InterviewRunner() {
 
 
   useEffect(() => {
-    localStorage.setItem(`drafts_${sessionId}`, JSON.stringify(drafts));
+    const draftsToSave = Object.fromEntries(
+      Object.entries(drafts).map(([index, draft]) => {
+        const { audioBlob, ...textDraft } = draft || {};
+        return [index, textDraft];
+      })
+    );
+
+    localStorage.setItem(
+      `drafts_${sessionId}`,
+      JSON.stringify(draftsToSave)
+    );
   }, [drafts, sessionId]);
 
   useEffect(() => {
@@ -138,10 +159,19 @@ function InterviewRunner() {
 
       mediaRecorderRef.current.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
         setDrafts(prev => ({
           ...prev,
-          [currentQuestionIndex]: { ...prev[currentQuestionIndex], audioBlob: blob }
+          [currentQuestionIndex]: {
+            ...prev[currentQuestionIndex],
+            audioBlob: blob
+          }
         }));
+
+        if (stopRecordingResolveRef.current) {
+          stopRecordingResolveRef.current(blob);
+          stopRecordingResolveRef.current = null;
+        }
       };
 
       mediaRecorderRef.current.start(1000);
@@ -154,44 +184,78 @@ function InterviewRunner() {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current?.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    return new Promise((resolve) => {
+      const recorder = mediaRecorderRef.current;
+
+      if (!recorder || recorder.state === 'inactive') {
+        const existingAudio = drafts[currentQuestionIndex]?.audioBlob;
+        resolve(existingAudio instanceof Blob ? existingAudio : null);
+        return;
+      }
+
+      stopRecordingResolveRef.current = resolve;
+
+      recorder.stop();
+
       streamRef.current?.getTracks().forEach(track => track.stop());
       clearInterval(timerIntervalRef.current);
       setIsRecording(false);
-    }
+    });
   };
 
+  
   const handleSubmitAnswer = async () => {
     if (isQuestionLocked) return;
-    if (isRecording) stopRecording();
 
     const draft = drafts[currentQuestionIndex];
     const code = draft?.code || '';
-    const audio = draft?.audioBlob;
+
+    let audio = draft?.audioBlob;
+
+    // Wait until recording has completely stopped.
+    if (isRecording) {
+      audio = await stopRecording();
+    }
+
+    // Accept only a valid Blob.
+    if (!(audio instanceof Blob)) {
+      audio = null;
+    }
 
     if (!code && !audio) {
       toast.warning("Please provide code or an audio answer.");
       return;
     }
 
-    // ✅ 1. OPTIMISTIC UPDATE: Lock UI instantly
-    setSubmittedLocal(prev => ({ ...prev, [currentQuestionIndex]: true }));
+    setSubmittedLocal(prev => ({
+      ...prev,
+      [currentQuestionIndex]: true
+    }));
 
     const formData = new FormData();
     formData.append('questionIndex', currentQuestionIndex);
-    if (code) formData.append('code', code);
-    if (audio) formData.append('audioFile', audio, 'answer.webm');
 
-    // ✅ 2. Send Request
+    if (code) {
+      formData.append('code', code);
+    }
+
+    if (audio) {
+      formData.append('audioFile', audio, 'answer.webm');
+    }
+
     dispatch(submitAnswer({ sessionId, formData }))
       .unwrap()
       .catch((err) => {
-        // If backend fails, UNLOCK so user can try again
-        setSubmittedLocal(prev => ({ ...prev, [currentQuestionIndex]: false }));
+        setSubmittedLocal(prev => ({
+          ...prev,
+          [currentQuestionIndex]: false
+        }));
+
         toast.error("Submission failed. Please try again.");
+        console.error("Answer submission failed:", err);
       });
   };
+
 
   const handleFinishInterview = () => {
     if (!window.confirm("Are you sure you want to finish?")) return;

@@ -101,7 +101,7 @@ const [formData, setFormData] = useState({
 
   const onSubmit = (e) => {
     e.preventDefault();
-
+ 
     if (
       formData.interviewMode === 'knowledge-based' &&
       !formData.knowledgeBaseId

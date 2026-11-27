@@ -23,13 +23,14 @@ CHUNK_OVERLAP = 150
 class RAGService:
     def __init__(self):
         self.embeddings = OllamaEmbeddings(
-            model=EMBEDDING_MODEL
-        
+            model=EMBEDDING_MODEL,
+            base_url="http://127.0.0.1:11434"
         )
 
         self.llm = ChatOllama(
             model="qwen2.5:3b",
-            temperature=0
+            temperature=0,
+            base_url="http://127.0.0.1:11434"
         )
 
         self.vector_store = Chroma(
@@ -139,15 +140,9 @@ class RAGService:
         )
 
         # Keep only sufficiently relevant chunks
-        MAX_DISTANCE = 0.8
-
-        relevant_documents = [
-            doc
-            for doc, distance in results
-            if distance <= MAX_DISTANCE
-        ]
-
-        return relevant_documents
+# Return the top matching chunks.
+# User and knowledge-base filters are still enforced above.
+        return [doc for doc, distance in results]
 
 
     def answer_question(
